@@ -426,6 +426,7 @@ if __name__ == "__main__":
 
 
     b.show_board()
+    print(b.get_all_possible_moves("W"))
     m = b.get_all_possible_moves("W")[0][0]
     b.make_move(m,"W")
     b.show_board()
