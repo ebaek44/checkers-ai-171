@@ -1,4 +1,3 @@
-
 from BoardClasses import Move, Board
 from random import randint
 import copy
