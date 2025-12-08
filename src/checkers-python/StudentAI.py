@@ -19,7 +19,9 @@ class StudentAI():
         self.board.initialize_game() 
         self.color = None  # Will be determined in get_move
         self.opponent = {1: 2, 2: 1} 
-        self.threshold = 0.8 
+        self.threshold = 1.5
+        # get a max depth for the idfs
+        self.MAX_DEPTH = 15
 
 
     @staticmethod 
@@ -74,6 +76,20 @@ class StudentAI():
         
         return score 
     
+    def order_moves(self, board, moves, color):
+        """
+        Sorts the moves by their score and returns a list of the sorted moves
+        """
+        scored = []
+        for mv in moves:
+            board.make_move(mv, color)
+            score = self.evaluate(board, color)
+            board.undo()
+            scored.append((score, mv))
+        
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [mv for score, mv in scored]
+
     def dfs(self, board, d, deadline, alpha, beta, color): 
         """ 
         This is the dfs that will apply moves going up to to a certain depth (d) 
@@ -91,7 +107,9 @@ class StudentAI():
             score = self.evaluate(board, color) 
             return score, False 
         
-        moves = self.flatten_moves(moves_by_piece) 
+        moves = self.flatten_moves(moves_by_piece)
+        moves = self.order_moves(board, moves, color)
+
         best_score = -INF 
         
         for mv in moves: 
@@ -99,19 +117,21 @@ class StudentAI():
             if time.perf_counter() >= deadline: 
                 return 0, True 
             
-            board_copy = copy.deepcopy(board)
-            board_copy.make_move(mv, color)
+            board.make_move(mv, color)
             
             # Negamax: child called with opposite color and negated window 
             opp_color = 3 - color 
             opp_score, timed_out = self.dfs(
-                board_copy, 
+                board, 
                 d - 1, 
                 deadline,
                 -beta,  # note the negation and swap 
                 -alpha, 
                 opp_color 
             )
+
+            # undo the move
+            board.undo()
             
             # Check for timeout 
             if timed_out: 
@@ -155,11 +175,13 @@ class StudentAI():
         if not moves:
             return Move([])
         
+        moves = self.order_moves(self.board, moves, self.color)
+
         deadline = self.threshold + time.perf_counter() 
         best_move = moves[0] 
         
         # Iterative deepening
-        for d in range(1, INF): 
+        for d in range(1, self.MAX_DEPTH): 
             # When we are out of time we dont start another loop 
             if time.perf_counter() >= deadline: 
                 break 
@@ -175,12 +197,11 @@ class StudentAI():
                     curr_depth_best_move = None 
                     break 
                 
-                # Make a copy of the board and simulate the move
-                board_copy = copy.deepcopy(self.board)
-                board_copy.make_move(mv, self.color) 
-                
+                # simulate the move and undo after
+                self.board.make_move(mv, self.color)
+
                 opp_score, timed_out = self.dfs(
-                    board_copy, 
+                    self.board, 
                     d - 1, 
                     deadline, 
                     -beta, 
@@ -188,6 +209,8 @@ class StudentAI():
                     self.opponent[self.color]
                 )
                 
+                # Undo the board
+                self.board.undo()
                 # If we timed out mid iteration we cannot trust this depth 
                 if timed_out: 
                     curr_depth_best_move = None 
@@ -208,7 +231,14 @@ class StudentAI():
                     break 
 
             if curr_depth_best_move is not None: 
-                best_move = curr_depth_best_move 
+                best_move = curr_depth_best_move
+                # we will try to move the best move to the next depth (because of ordering)
+                try:
+                    # So we try to remove it and then add it to the front of moves
+                    moves.remove(curr_depth_best_move)
+                except ValueError:
+                    pass
+                moves.insert(0, curr_depth_best_move)
             else: 
                 break
 
