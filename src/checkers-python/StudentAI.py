@@ -19,14 +19,14 @@ class StudentAI():
         self.board.initialize_game() 
         self.color = None  # Will be determined in get_move
         self.opponent = {1: 2, 2: 1} 
-        self.threshold = 0.8 
-        # 0.8 seconds at each depth till cutoff
+        self.threshold = 1.5
+        # get a max depth for the idfs
+        self.MAX_DEPTH = 15
+
 
     @staticmethod 
     def flatten_moves(moves_by_piece):
-        """ 
-        Board.get_all_possible_moves returns List[List[Move]]; flatten to List[Move]. 
-        """ 
+      
         res = [] 
         for bucket in moves_by_piece: 
             res.extend(bucket) 
@@ -57,18 +57,18 @@ class StudentAI():
                 # Calculate piece value
                 piece_value = KING_VALUE if is_king else PAWN_VALUE
                 
-                # Add positional bonus for regular pieces advancing
+                # Add positional bonus when pieces r moved up
                 if not is_king:
-                    if piece_color == "B":  # Black moves down (increasing row)
-                        piece_value += row * 5  # Bonus for advancing
-                    else:  # White moves up (decreasing row)
+                    if piece_color == "B": 
+                        piece_value += row * 5  
+                    else:  
                         piece_value += (board.row - 1 - row) * 5
                 
-                # Add bonus for pieces in center columns (safer, more mobile)
+            
                 center_distance = abs(col - board.col // 2)
                 piece_value += (board.col // 2 - center_distance) * 2
                 
-                # Add to score based on whose piece it is
+        
                 if (piece_color == "B" and color == 1) or (piece_color == "W" and color == 2):
                     score += piece_value
                 else:
@@ -76,12 +76,25 @@ class StudentAI():
         
         return score 
     
+    def order_moves(self, board, moves, color):
+        """
+        Sorts the moves by their score and returns a list of the sorted moves
+        """
+        scored = []
+        for mv in moves:
+            board.make_move(mv, color)
+            score = self.evaluate(board, color)
+            board.undo()
+            scored.append((score, mv))
+        
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [mv for score, mv in scored]
+
     def dfs(self, board, d, deadline, alpha, beta, color): 
         """ 
         This is the dfs that will apply moves going up to to a certain depth (d) 
         simulating the alpha/beta scores for both user and opponent or until timed out 
-        @parameters: simulating moves on board, using alpha and beta scores to move flipping each move with color 
-        @returns: tuple of score which is the opponents score, and timed_out which will tell if deadline was hit during search 
+        
         """ 
         # Check time first to look if past deadline 
         if time.perf_counter() >= deadline: 
@@ -94,7 +107,9 @@ class StudentAI():
             score = self.evaluate(board, color) 
             return score, False 
         
-        moves = self.flatten_moves(moves_by_piece) 
+        moves = self.flatten_moves(moves_by_piece)
+        moves = self.order_moves(board, moves, color)
+
         best_score = -INF 
         
         for mv in moves: 
@@ -102,19 +117,21 @@ class StudentAI():
             if time.perf_counter() >= deadline: 
                 return 0, True 
             
-            board_copy = copy.deepcopy(board)
-            board_copy.make_move(mv, color)
+            board.make_move(mv, color)
             
             # Negamax: child called with opposite color and negated window 
             opp_color = 3 - color 
             opp_score, timed_out = self.dfs(
-                board_copy, 
+                board, 
                 d - 1, 
                 deadline,
                 -beta,  # note the negation and swap 
                 -alpha, 
                 opp_color 
             )
+
+            # undo the move
+            board.undo()
             
             # Check for timeout 
             if timed_out: 
@@ -136,21 +153,16 @@ class StudentAI():
         return best_score, False 
         
     def get_move(self, move): 
-        """ 
-        Main function for the StudentAI Uses alpha-beta pruning with iterative dfs to find the most optimal move 
-        @parameters: move is the last move that has been done by the opponent 
-        @return: Will either return the best move from all possible moves or in certain edge cases return None 
-        """
+       
         # Determine our color based on first move
         if self.color is None:
             if len(move.seq) == 0:
-                # Empty move means we go first (black/player 1)
+                # Empty move means we go first
                 self.color = 1
             else:
-                # We received opponent's move, so we go second (white/player 2)
+                # We received opponent's move, so we go second
                 self.color = 2
         
-        # Apply opponent's move if not empty
         if len(move.seq) > 0:
             self.board.make_move(move, self.opponent[self.color])
         
@@ -163,12 +175,13 @@ class StudentAI():
         if not moves:
             return Move([])
         
+        moves = self.order_moves(self.board, moves, self.color)
+
         deadline = self.threshold + time.perf_counter() 
-        # This will be our return variable, give it a move to start 
         best_move = moves[0] 
         
         # Iterative deepening
-        for d in range(1, INF): 
+        for d in range(1, self.MAX_DEPTH): 
             # When we are out of time we dont start another loop 
             if time.perf_counter() >= deadline: 
                 break 
@@ -184,14 +197,11 @@ class StudentAI():
                     curr_depth_best_move = None 
                     break 
                 
-                # Make a copy of the board and simulate the move
-                board_copy = copy.deepcopy(self.board)
-                board_copy.make_move(mv, self.color) 
-                
-                # The dfs will return the opponent's score and if it was timed out during the iteration 
-                # Also give everything flipped as it is our opponents "move" 
+                # simulate the move and undo after
+                self.board.make_move(mv, self.color)
+
                 opp_score, timed_out = self.dfs(
-                    board_copy, 
+                    self.board, 
                     d - 1, 
                     deadline, 
                     -beta, 
@@ -199,6 +209,8 @@ class StudentAI():
                     self.opponent[self.color]
                 )
                 
+                # Undo the board
+                self.board.undo()
                 # If we timed out mid iteration we cannot trust this depth 
                 if timed_out: 
                     curr_depth_best_move = None 
@@ -211,23 +223,25 @@ class StudentAI():
                 if my_score > curr_depth_best_score: 
                     curr_depth_best_score = my_score 
                     curr_depth_best_move = mv 
-                
-                # Update alpha with score if it is a better score 
+
                 if my_score > alpha: 
                     alpha = my_score 
-                
-                # If alpha >= beta then break loop (alpha-beta pruning) 
+
                 if alpha >= beta: 
                     break 
-            
-            # Only update best move if we completed this depth successfully
+
             if curr_depth_best_move is not None: 
-                best_move = curr_depth_best_move 
+                best_move = curr_depth_best_move
+                # we will try to move the best move to the next depth (because of ordering)
+                try:
+                    # So we try to remove it and then add it to the front of moves
+                    moves.remove(curr_depth_best_move)
+                except ValueError:
+                    pass
+                moves.insert(0, curr_depth_best_move)
             else: 
-                # If we didn't complete this depth, stop trying deeper depths
                 break
-        
-        # Apply our move to our internal board to keep it in sync
+
         self.board.make_move(best_move, self.color)
         
         return best_move
