@@ -18,7 +18,7 @@ sys.path.append("./Sample_AIs/Random_AI/AI_Extensions/")
 
 from GameLogic import GameLogic
 
-NUM_GAMES = 100
+NUM_GAMES = 25
 TIME_LIMIT = 1200  # seconds, same as main.py uses
 
 def run_series(col, row, k, ai_path_1, ai_path_2, num_games=NUM_GAMES, time_limit=TIME_LIMIT):

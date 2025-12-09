@@ -19,7 +19,9 @@ class StudentAI():
         self.board.initialize_game() 
         self.color = None  # Will be determined in get_move
         self.opponent = {1: 2, 2: 1} 
-        self.threshold = 1.5
+
+        # Get the threshold for each move (2 sec per move gives us 150 moves to play before our time is out)
+        self.threshold = 2
         # get a max depth for the idfs
         self.MAX_DEPTH = 15
 
